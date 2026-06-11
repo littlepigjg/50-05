@@ -16,7 +16,7 @@ import {
 } from '../engine/gridEditor';
 import { evaluateDifficulty, getDifficultyBgClass, getDifficultyLabel } from '../engine/difficultyEvaluator';
 import type { DifficultyBreakdown } from '../engine/difficultyEvaluator';
-import { checkReachability } from '../engine/pathfinding';
+import { checkReachability, getCellType } from '../engine/pathfinding';
 import type { ReachabilityReport } from '../engine/pathfinding';
 import { EditorGrid } from './editor/EditorGrid';
 import { EditorToolbar } from './editor/EditorToolbar';
@@ -117,17 +117,58 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
 
   const liveWarnings: string[] = useMemo(() => {
     const ws: string[] = [];
-    if (!reachability.goalReachable) {
-      ws.push(`终点 (${goal.x}, ${goal.y}) 无法从起点到达`);
+
+    const pitStars: Position[] = [];
+    const wallStars: Position[] = [];
+    const pitGoal = getCellType({ grid, width, height } as Level, goal) === 'pit';
+    const wallGoal = getCellType({ grid, width, height } as Level, goal) === 'wall';
+    const pitStart = getCellType({ grid, width, height } as Level, start) === 'pit';
+    const wallStart = getCellType({ grid, width, height } as Level, start) === 'wall';
+
+    for (const star of stars) {
+      const cellType = getCellType({ grid, width, height } as Level, star);
+      if (cellType === 'pit') pitStars.push(star);
+      if (cellType === 'wall') wallStars.push(star);
     }
-    if (reachability.unreachableStars.length > 0) {
-      const positions = reachability.unreachableStars
+
+    if (pitStars.length > 0) {
+      const positions = pitStars.map((s) => `(${s.x}, ${s.y})`).join('、');
+      ws.push(`💀 ${pitStars.length} 颗星星放在陷阱上：${positions}（机器人掉进去会失败，无法收集）`);
+    }
+    if (wallStars.length > 0) {
+      const positions = wallStars.map((s) => `(${s.x}, ${s.y})`).join('、');
+      ws.push(`🧱 ${wallStars.length} 颗星星放在墙上：${positions}`);
+    }
+    if (pitGoal) {
+      ws.push(`💀 终点 (${goal.x}, ${goal.y}) 放在陷阱上，机器人无法抵达`);
+    }
+    if (wallGoal) {
+      ws.push(`🧱 终点 (${goal.x}, ${goal.y}) 放在墙上`);
+    }
+    if (pitStart) {
+      ws.push(`💀 起点 (${start.x}, ${start.y}) 放在陷阱上`);
+    }
+    if (wallStart) {
+      ws.push(`🧱 起点 (${start.x}, ${start.y}) 放在墙上`);
+    }
+
+    const remainingUnreachable = reachability.unreachableStars.filter(
+      (s) => !pitStars.some((p) => p.x === s.x && p.y === s.y) &&
+             !wallStars.some((w) => w.x === s.x && w.y === s.y)
+    );
+
+    if (!reachability.goalReachable && !pitGoal && !wallGoal) {
+      ws.push(`🚫 终点 (${goal.x}, ${goal.y}) 无法从起点到达，请检查墙壁/陷阱布局`);
+    }
+    if (remainingUnreachable.length > 0) {
+      const positions = remainingUnreachable
         .map((s) => `(${s.x}, ${s.y})`)
         .join('、');
-      ws.push(`${reachability.unreachableStars.length} 颗星星无法到达：${positions}`);
+      ws.push(`🚫 ${remainingUnreachable.length} 颗星星被障碍物围住无法到达：${positions}`);
     }
+
     return ws;
-  }, [reachability, goal]);
+  }, [reachability, goal, start, stars, grid, width, height]);
 
   interface ToastItem {
     id: number;

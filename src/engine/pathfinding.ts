@@ -21,7 +21,13 @@ export function isValidCell(level: Level, pos: Position): boolean {
 
 export function isWalkableCell(level: Level, pos: Position): boolean {
   if (!isValidCell(level, pos)) return false;
-  return level.grid[pos.y][pos.x] !== 'wall';
+  const cell = level.grid[pos.y][pos.x];
+  return cell !== 'wall' && cell !== 'pit';
+}
+
+export function getCellType(level: Level, pos: Position): string | null {
+  if (!isValidCell(level, pos)) return null;
+  return level.grid[pos.y][pos.x];
 }
 
 export interface BFSResult {

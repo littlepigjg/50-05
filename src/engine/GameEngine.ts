@@ -9,7 +9,7 @@ import type {
   RobotState,
 } from './types';
 import { DirectionVectors } from './types';
-import { checkReachability, isWalkableCell } from './pathfinding';
+import { checkReachability, getCellType } from './pathfinding';
 
 export function createEmptyGrid(width: number, height: number): CellType[][] {
   return Array.from({ length: height }, () =>
@@ -350,22 +350,35 @@ export function validateLevel(level: Level): string[] {
     if (positionEquals(star, level.start) || positionEquals(star, level.goal)) {
       errors.push('星星不能放在起点或终点');
     }
+    const cellType = getCellType(level, star);
+    if (cellType === 'wall') {
+      errors.push(`星星 (${star.x}, ${star.y}) 放在了墙壁上，无法放置`);
+    } else if (cellType === 'pit') {
+      errors.push(`星星 (${star.x}, ${star.y}) 放在了陷阱上，机器人走到这里会掉进陷阱，无法收集这颗星`);
+    }
   }
 
   const cell = getCellAt(level, level.start);
-  if (cell === 'wall') {
-    errors.push('起点不能是墙壁');
+  if (cell === 'wall' || cell === 'pit') {
+    errors.push('起点不能是墙壁或陷阱');
   }
   const goalCell = getCellAt(level, level.goal);
-  if (goalCell === 'wall') {
-    errors.push('终点不能是墙壁');
+  if (goalCell === 'wall' || goalCell === 'pit') {
+    errors.push('终点不能是墙壁或陷阱');
   }
 
   if (level.allowedBlocks.length === 0) {
     errors.push('至少允许使用一种指令块');
   }
 
-  if (errors.length === 0) {
+  const startValid = isValidPosition(level, level.start) &&
+    getCellAt(level, level.start) !== 'wall' &&
+    getCellAt(level, level.start) !== 'pit';
+  const goalValid = isValidPosition(level, level.goal) &&
+    getCellAt(level, level.goal) !== 'wall' &&
+    getCellAt(level, level.goal) !== 'pit';
+
+  if (startValid && goalValid) {
     const reachability = checkReachability(level);
 
     if (!reachability.goalReachable) {
@@ -381,12 +394,6 @@ export function validateLevel(level: Level): string[] {
       errors.push(
         `以下 ${reachability.unreachableStars.length} 颗星星无法到达：${positions}`
       );
-    }
-
-    for (const star of level.stars) {
-      if (!isWalkableCell(level, star)) {
-        errors.push(`星星 (${star.x}, ${star.y}) 放在了墙壁上`);
-      }
     }
   }
 
