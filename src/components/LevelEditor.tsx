@@ -16,6 +16,8 @@ import {
 } from '../engine/gridEditor';
 import { evaluateDifficulty, getDifficultyBgClass, getDifficultyLabel } from '../engine/difficultyEvaluator';
 import type { DifficultyBreakdown } from '../engine/difficultyEvaluator';
+import { checkReachability } from '../engine/pathfinding';
+import type { ReachabilityReport } from '../engine/pathfinding';
 import { EditorGrid } from './editor/EditorGrid';
 import { EditorToolbar } from './editor/EditorToolbar';
 
@@ -92,6 +94,40 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
   }, [name, description, width, height, grid, start, startDirection, goal, stars, allowedBlocks, maxBlocks, hint]);
 
   const effectiveDifficulty = useAutoDifficulty ? autoDifficulty.difficulty : difficulty;
+
+  const reachability: ReachabilityReport = useMemo(() => {
+    const evalLevel: Level = {
+      id: 'eval',
+      name,
+      description,
+      difficulty: 1,
+      width,
+      height,
+      grid,
+      start,
+      startDirection,
+      goal,
+      stars,
+      allowedBlocks,
+      maxBlocks: maxBlocks > 0 ? maxBlocks : undefined,
+      hint: hint || undefined,
+    };
+    return checkReachability(evalLevel);
+  }, [name, description, width, height, grid, start, startDirection, goal, stars, allowedBlocks, maxBlocks, hint]);
+
+  const liveWarnings: string[] = useMemo(() => {
+    const ws: string[] = [];
+    if (!reachability.goalReachable) {
+      ws.push(`终点 (${goal.x}, ${goal.y}) 无法从起点到达`);
+    }
+    if (reachability.unreachableStars.length > 0) {
+      const positions = reachability.unreachableStars
+        .map((s) => `(${s.x}, ${s.y})`)
+        .join('、');
+      ws.push(`${reachability.unreachableStars.length} 颗星星无法到达：${positions}`);
+    }
+    return ws;
+  }, [reachability, goal]);
 
   interface ToastItem {
     id: number;
@@ -570,6 +606,22 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
 
                 <EditorToolbar currentTool={tool} onToolChange={setTool} />
 
+                {liveWarnings.length > 0 && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <h4 className="text-sm font-bold text-amber-800 mb-1 flex items-center gap-1">
+                      ⚠️ 可达性警告
+                    </h4>
+                    <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
+                      {liveWarnings.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-amber-600 mt-1.5">
+                      提示：红色格子表示无法从起点到达的区域，灰色星星/❌终点表示被墙壁围死的目标。
+                    </p>
+                  </div>
+                )}
+
                 <div className="my-4">
                   <EditorGrid
                     width={width}
@@ -581,6 +633,8 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
                     startDirection={startDirection}
                     tool={tool}
                     onCellClick={handleCellClick}
+                    unreachableCells={reachability.reachableCells}
+                    unreachableGoal={!reachability.goalReachable}
                   />
                 </div>
 

@@ -1,4 +1,12 @@
 import type { Level, Position } from './types';
+import {
+  bfsWithDirection,
+  greedyStarPath,
+  calculateStarScatter,
+  countCellsByType,
+  checkReachability,
+  isWalkableCell,
+} from './pathfinding';
 
 export interface DifficultyBreakdown {
   mapSizeScore: number;
@@ -15,147 +23,8 @@ export interface DifficultyBreakdown {
   color: string;
 }
 
-interface BFSResult {
-  distance: number;
-  turns: number;
-}
-
-function key(pos: Position): string {
-  return `${pos.x},${pos.y}`;
-}
-
-function isWalkable(level: Level, pos: Position): boolean {
-  if (pos.x < 0 || pos.x >= level.width || pos.y < 0 || pos.y >= level.height) return false;
-  return level.grid[pos.y][pos.x] !== 'wall';
-}
-
-const DIR_VECS = [
-  { dx: 0, dy: -1 },
-  { dx: 1, dy: 0 },
-  { dx: 0, dy: 1 },
-  { dx: -1, dy: 0 },
-];
-
-function bfsWithDirection(
-  level: Level,
-  start: Position,
-  startDir: number,
-  end: Position
-): BFSResult {
-  const visited = new Set<string>();
-  const queue: { x: number; y: number; dir: number; dist: number; turns: number }[] = [];
-  queue.push({ x: start.x, y: start.y, dir: startDir, dist: 0, turns: 0 });
-  visited.add(`${key(start)},${startDir}`);
-
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-
-    if (cur.x === end.x && cur.y === end.y) {
-      return { distance: cur.dist, turns: cur.turns };
-    }
-
-    for (let d = 0; d < 4; d++) {
-      const nx = cur.x + DIR_VECS[d].dx;
-      const ny = cur.y + DIR_VECS[d].dy;
-      const npos = { x: nx, y: ny };
-
-      if (!isWalkable(level, npos)) continue;
-
-      const stateKey = `${key(npos)},${d}`;
-      if (visited.has(stateKey)) continue;
-      visited.add(stateKey);
-
-      const isTurn = d !== cur.dir;
-      const dist = d === cur.dir ? cur.dist + 1 : cur.dist + 2;
-      const turns = isTurn ? cur.turns + 1 : cur.turns;
-
-      queue.push({ x: nx, y: ny, dir: d, dist, turns });
-    }
-  }
-
-  return { distance: Infinity, turns: Infinity };
-}
-
-function bfsDistance(level: Level, start: Position, end: Position): number {
-  const visited = new Set<string>();
-  const queue: Position[] = [start];
-  visited.add(key(start));
-  let dist = 0;
-
-  while (queue.length > 0) {
-    const size = queue.length;
-    for (let i = 0; i < size; i++) {
-      const cur = queue.shift()!;
-      if (cur.x === end.x && cur.y === end.y) return dist;
-
-      for (const dv of DIR_VECS) {
-        const npos = { x: cur.x + dv.dx, y: cur.y + dv.dy };
-        if (!isWalkable(level, npos)) continue;
-        const k = key(npos);
-        if (visited.has(k)) continue;
-        visited.add(k);
-        queue.push(npos);
-      }
-    }
-    dist++;
-  }
-
-  return Infinity;
-}
-
-function greedyStarPath(level: Level, start: Position, stars: Position[], goal: Position): number {
-  if (stars.length === 0) {
-    return bfsDistance(level, start, goal);
-  }
-
-  let totalDist = 0;
-  let current = start;
-  const remaining = [...stars];
-
-  while (remaining.length > 0) {
-    let bestIdx = 0;
-    let bestDist = Infinity;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const d = bfsDistance(level, current, remaining[i]);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = i;
-      }
-    }
-
-    if (bestDist === Infinity) return Infinity;
-
-    totalDist += bestDist;
-    current = remaining[bestIdx];
-    remaining.splice(bestIdx, 1);
-  }
-
-  const toGoal = bfsDistance(level, current, goal);
-  if (toGoal === Infinity) return Infinity;
-  totalDist += toGoal;
-
-  return totalDist;
-}
-
-function countWalls(level: Level): number {
-  let count = 0;
-  for (let y = 0; y < level.height; y++) {
-    for (let x = 0; x < level.width; x++) {
-      if (level.grid[y][x] === 'wall') count++;
-    }
-  }
-  return count;
-}
-
-function countPits(level: Level): number {
-  let count = 0;
-  for (let y = 0; y < level.height; y++) {
-    for (let x = 0; x < level.width; x++) {
-      if (level.grid[y][x] === 'pit') count++;
-    }
-  }
-  return count;
+function sigmoid(x: number, midpoint: number, steepness: number): number {
+  return 1 / (1 + Math.exp(-steepness * (x - midpoint)));
 }
 
 function calculateBlockComplexity(level: Level): number {
@@ -191,64 +60,43 @@ function calculateBlockComplexity(level: Level): number {
   return complexity;
 }
 
-function calculateStarScatter(level: Level): number {
-  if (level.stars.length <= 1) return 0;
-
-  let totalDist = 0;
-  let count = 0;
-  for (let i = 0; i < level.stars.length; i++) {
-    for (let j = i + 1; j < level.stars.length; j++) {
-      const dx = level.stars[i].x - level.stars[j].x;
-      const dy = level.stars[i].y - level.stars[j].y;
-      totalDist += Math.abs(dx) + Math.abs(dy);
-      count++;
-    }
-  }
-
-  const avgDist = totalDist / count;
-  const maxPossible = level.width + level.height;
-  return Math.min(avgDist / maxPossible, 1);
-}
-
-function sigmoid(x: number, midpoint: number, steepness: number): number {
-  return 1 / (1 + Math.exp(-steepness * (x - midpoint)));
-}
-
 export function evaluateDifficulty(level: Level): DifficultyBreakdown {
   const totalCells = level.width * level.height;
-  const wallCount = countWalls(level);
-  const pitCount = countPits(level);
+  const wallCount = countCellsByType(level, 'wall');
+  const pitCount = countCellsByType(level, 'pit');
   const wallDensity = wallCount / totalCells;
   const pitDensity = pitCount / totalCells;
+
+  const reachability = checkReachability(level);
+
+  let reachableStars: Position[] = reachability.reachableStars;
+  if (!isWalkableCell(level, level.start)) {
+    reachableStars = [];
+  }
 
   const directPath = bfsWithDirection(level, level.start, level.startDirection, level.goal);
   const directDist = directPath.distance === Infinity ? totalCells : directPath.distance;
   const directTurns = directPath.turns === Infinity ? totalCells : directPath.turns;
 
-  const starPathDist = greedyStarPath(level, level.start, level.stars, level.goal);
+  const starPathResult = greedyStarPath(level, level.start, reachableStars, level.goal);
+  const starPathDist = starPathResult.totalDistance;
   const effectivePathLen = starPathDist === Infinity ? directDist * 2 : starPathDist;
 
   const starScatter = calculateStarScatter(level);
-
   const blockComplexity = calculateBlockComplexity(level);
 
   const mapSizeScore = sigmoid(totalCells, 40, 0.05) * 3;
-
   const wallDensityScore = sigmoid(wallDensity, 0.2, 8) * 3;
-
   const pitDensityScore = sigmoid(pitDensity, 0.05, 15) * 3;
-
   const starCountScore = sigmoid(level.stars.length, 3, 0.5) * 3;
-
   const pathLengthScore = sigmoid(effectivePathLen, 15, 0.08) * 4;
 
-  const detourRatio = level.stars.length > 0 && directDist > 0
+  const detourRatio = reachableStars.length > 0 && directDist > 0
     ? effectivePathLen / directDist
     : 1;
   const starPathScore = sigmoid(detourRatio, 2, 1.5) * 2.5 + starScatter * 1.5;
 
   const blockComplexityScore = blockComplexity * 0.8;
-
   const pathComplexityScore = sigmoid(directTurns, 5, 0.3) * 2.5;
 
   const rawScore =

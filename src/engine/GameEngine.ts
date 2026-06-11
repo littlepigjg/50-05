@@ -9,6 +9,7 @@ import type {
   RobotState,
 } from './types';
 import { DirectionVectors } from './types';
+import { checkReachability, isWalkableCell } from './pathfinding';
 
 export function createEmptyGrid(width: number, height: number): CellType[][] {
   return Array.from({ length: height }, () =>
@@ -362,6 +363,31 @@ export function validateLevel(level: Level): string[] {
 
   if (level.allowedBlocks.length === 0) {
     errors.push('至少允许使用一种指令块');
+  }
+
+  if (errors.length === 0) {
+    const reachability = checkReachability(level);
+
+    if (!reachability.goalReachable) {
+      errors.push(
+        `终点 (${level.goal.x}, ${level.goal.y}) 无法从起点到达，请检查墙壁布局`
+      );
+    }
+
+    if (reachability.unreachableStars.length > 0) {
+      const positions = reachability.unreachableStars
+        .map((s) => `(${s.x}, ${s.y})`)
+        .join('、');
+      errors.push(
+        `以下 ${reachability.unreachableStars.length} 颗星星无法到达：${positions}`
+      );
+    }
+
+    for (const star of level.stars) {
+      if (!isWalkableCell(level, star)) {
+        errors.push(`星星 (${star.x}, ${star.y}) 放在了墙壁上`);
+      }
+    }
   }
 
   return errors;
