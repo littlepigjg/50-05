@@ -2,6 +2,10 @@ import React, { useMemo } from 'react';
 import type { Level } from '../engine/types';
 import { LEVELS } from '../engine/levels';
 import { loadProgress, isLevelUnlocked } from '../engine/storage';
+import { getDifficultyBgClass, getDifficultyLabel } from '../engine/difficultyEvaluator';
+
+type SourceFilter = 'all' | 'main' | 'custom';
+type DifficultyFilter = number;
 
 interface LevelSelectProps {
   onSelectLevel: (level: Level) => void;
@@ -10,21 +14,21 @@ interface LevelSelectProps {
   customLevels: Level[];
 }
 
+const DIFFICULTY_RANGES: { value: DifficultyFilter; label: string; icon: string }[] = [
+  { value: 0, label: '全部难度', icon: '📊' },
+  { value: 1, label: '入门', icon: '🟢' },
+  { value: 2, label: '简单', icon: '🔵' },
+  { value: 3, label: '普通', icon: '🟣' },
+  { value: 4, label: '中等', icon: '🟠' },
+  { value: 5, label: '困难', icon: '🔴' },
+];
+
 const DifficultyBadge: React.FC<{ difficulty: number }> = ({ difficulty }) => {
-  const colors = [
-    'bg-green-100 text-green-700',
-    'bg-green-100 text-green-700',
-    'bg-blue-100 text-blue-700',
-    'bg-blue-100 text-blue-700',
-    'bg-purple-100 text-purple-700',
-    'bg-purple-100 text-purple-700',
-    'bg-orange-100 text-orange-700',
-    'bg-red-100 text-red-700',
-  ];
-  const color = colors[Math.min(difficulty, colors.length - 1)];
+  const d = Math.max(1, Math.min(8, difficulty));
+  const bgClass = getDifficultyBgClass(d);
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${color}`}>
-      {'★'.repeat(Math.min(difficulty, 5))}
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${bgClass}`}>
+      {'★'.repeat(Math.min(d, 5))}
     </span>
   );
 };
@@ -38,13 +42,27 @@ export const LevelSelect: React.FC<LevelSelectProps> = ({
   const progress = useMemo(() => loadProgress(), []);
   const allLevels = useMemo(() => [...LEVELS, ...customLevels], [customLevels]);
 
-  const [filter, setFilter] = React.useState<'all' | 'main' | 'custom'>('all');
+  const [sourceFilter, setSourceFilter] = React.useState<SourceFilter>('all');
+  const [difficultyFilter, setDifficultyFilter] = React.useState<DifficultyFilter>(0);
+
+  const sourceFiltered = useMemo(() => {
+    if (sourceFilter === 'main') return LEVELS;
+    if (sourceFilter === 'custom') return customLevels;
+    return allLevels;
+  }, [sourceFilter, LEVELS, customLevels, allLevels]);
 
   const displayedLevels = useMemo(() => {
-    if (filter === 'main') return LEVELS;
-    if (filter === 'custom') return customLevels;
-    return allLevels;
-  }, [filter, LEVELS, customLevels, allLevels]);
+    if (difficultyFilter === 0) return sourceFiltered;
+    return sourceFiltered.filter((l) => {
+      const d = Math.max(1, Math.min(8, l.difficulty));
+      if (difficultyFilter === 1) return d <= 2;
+      if (difficultyFilter === 2) return d === 2 || d === 3;
+      if (difficultyFilter === 3) return d === 3 || d === 4;
+      if (difficultyFilter === 4) return d === 4 || d === 5;
+      if (difficultyFilter === 5) return d >= 5;
+      return true;
+    });
+  }, [sourceFiltered, difficultyFilter]);
 
   const totalCompleted = useMemo(() => {
     return LEVELS.filter((l) => progress[l.id]?.completed).length;
@@ -98,39 +116,79 @@ export const LevelSelect: React.FC<LevelSelectProps> = ({
         </div>
 
         <div className="game-card p-6">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-gray-800">选择关卡</h2>
             <div className="flex gap-2">
               <button
-                onClick={() => setFilter('all')}
+                onClick={() => setSourceFilter('all')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all
-                  ${filter === 'all' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  ${sourceFilter === 'all' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
               >
                 全部
               </button>
               <button
-                onClick={() => setFilter('main')}
+                onClick={() => setSourceFilter('main')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all
-                  ${filter === 'main' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  ${sourceFilter === 'main' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
               >
                 官方
               </button>
               <button
-                onClick={() => setFilter('custom')}
+                onClick={() => setSourceFilter('custom')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all
-                  ${filter === 'custom' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  ${sourceFilter === 'custom' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
               >
                 自定义
               </button>
             </div>
           </div>
 
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm text-gray-500 font-medium">按难度筛选：</span>
+              {difficultyFilter !== 0 && (
+                <span className="text-xs text-gray-400">
+                  （{displayedLevels.length} 个关卡）
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {DIFFICULTY_RANGES.map((range) => (
+                <button
+                  key={range.value}
+                  onClick={() => setDifficultyFilter(range.value)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all border
+                    ${difficultyFilter === range.value
+                      ? getDifficultyBgClass(range.value || 1) + ' shadow-sm'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                    }`}
+                >
+                  {range.icon} {range.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {displayedLevels.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <div className="text-6xl mb-4">📭</div>
-              <p>暂无{filter === 'custom' ? '自定义' : ''}关卡</p>
-              {filter === 'custom' && (
-                <p className="text-sm mt-2">使用关卡编辑器创建你的第一个关卡吧！</p>
+              {difficultyFilter !== 0 ? (
+                <>
+                  <p>当前筛选条件下没有关卡</p>
+                  <button
+                    onClick={() => setDifficultyFilter(0)}
+                    className="text-primary-500 hover:text-primary-600 text-sm mt-2 underline"
+                  >
+                    清除难度筛选
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p>暂无{sourceFilter === 'custom' ? '自定义' : ''}关卡</p>
+                  {sourceFilter === 'custom' && (
+                    <p className="text-sm mt-2">使用关卡编辑器创建你的第一个关卡吧！</p>
+                  )}
+                </>
               )}
             </div>
           ) : (
@@ -169,7 +227,10 @@ export const LevelSelect: React.FC<LevelSelectProps> = ({
                           '🔒'
                         )}
                       </div>
-                      <DifficultyBadge difficulty={level.difficulty} />
+                      <div className="flex flex-col items-end gap-1">
+                        <DifficultyBadge difficulty={level.difficulty} />
+                        <span className="text-[10px] text-gray-400">{getDifficultyLabel(level.difficulty)}</span>
+                      </div>
                     </div>
 
                     <h3 className="text-sm font-bold text-gray-800 text-left truncate mb-1">

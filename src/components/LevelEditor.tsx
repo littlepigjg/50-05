@@ -14,6 +14,8 @@ import {
   handleEditorToolClick,
   resizeEditorGrid,
 } from '../engine/gridEditor';
+import { evaluateDifficulty, getDifficultyBgClass, getDifficultyLabel } from '../engine/difficultyEvaluator';
+import type { DifficultyBreakdown } from '../engine/difficultyEvaluator';
 import { EditorGrid } from './editor/EditorGrid';
 import { EditorToolbar } from './editor/EditorToolbar';
 
@@ -50,6 +52,8 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
   const [name, setName] = useState(editLevel?.name || '我的关卡');
   const [description, setDescription] = useState(editLevel?.description || '');
   const [difficulty, setDifficulty] = useState(editLevel?.difficulty || 3);
+  const [useAutoDifficulty, setUseAutoDifficulty] = useState(!editLevel);
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const [width, setWidth] = useState(editLevel?.width || 8);
   const [height, setHeight] = useState(editLevel?.height || 8);
   const [grid, setGrid] = useState(editLevel?.grid || resizeEditorGrid([], 0, 0, editLevel?.width || 8, editLevel?.height || 8));
@@ -60,11 +64,34 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
   const [allowedBlocks, setAllowedBlocks] = useState<BlockType[]>(
     editLevel?.allowedBlocks || ALL_BLOCK_TYPES
   );
+  const [maxBlocks, setMaxBlocks] = useState<number>(editLevel?.maxBlocks || 0);
   const [tool, setTool] = useState<EditorTool>('wall');
   const [errors, setErrors] = useState<string[]>([]);
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [hint, setHint] = useState(editLevel?.hint || '');
+
+  const autoDifficulty: DifficultyBreakdown = useMemo(() => {
+    const evalLevel: Level = {
+      id: 'eval',
+      name,
+      description,
+      difficulty: 1,
+      width,
+      height,
+      grid,
+      start,
+      startDirection,
+      goal,
+      stars,
+      allowedBlocks,
+      maxBlocks: maxBlocks > 0 ? maxBlocks : undefined,
+      hint: hint || undefined,
+    };
+    return evaluateDifficulty(evalLevel);
+  }, [name, description, width, height, grid, start, startDirection, goal, stars, allowedBlocks, maxBlocks, hint]);
+
+  const effectiveDifficulty = useAutoDifficulty ? autoDifficulty.difficulty : difficulty;
 
   interface ToastItem {
     id: number;
@@ -130,7 +157,7 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
       id: editLevel?.id || `custom-${uuidv4().slice(0, 8)}`,
       name,
       description,
-      difficulty,
+      difficulty: effectiveDifficulty,
       width,
       height,
       grid,
@@ -139,9 +166,10 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
       goal,
       stars,
       allowedBlocks,
+      maxBlocks: maxBlocks > 0 ? maxBlocks : undefined,
       hint: hint || undefined,
     }),
-    [editLevel, name, description, difficulty, width, height, grid, start, startDirection, goal, stars, allowedBlocks, hint]
+    [editLevel, name, description, effectiveDifficulty, width, height, grid, start, startDirection, goal, stars, allowedBlocks, maxBlocks, hint]
   );
 
   const runValidation = (): boolean => {
@@ -183,6 +211,7 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
       setName(imported.name);
       setDescription(imported.description);
       setDifficulty(imported.difficulty);
+      setUseAutoDifficulty(false);
       setWidth(imported.width);
       setHeight(imported.height);
       setGrid(imported.grid);
@@ -191,6 +220,7 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
       setGoal(imported.goal);
       setStars(imported.stars);
       setAllowedBlocks(imported.allowedBlocks);
+      setMaxBlocks(imported.maxBlocks || 0);
       setHint(imported.hint || '');
       setShowImport(false);
       setImportText('');
@@ -302,21 +332,130 @@ export const LevelEditor: React.FC<LevelEditorProps> = ({
                     />
                   </div>
                   <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm text-gray-600">难度评估</label>
+                      <button
+                        onClick={() => setUseAutoDifficulty(!useAutoDifficulty)}
+                        className={`text-xs px-2 py-1 rounded-md font-medium transition-colors ${
+                          useAutoDifficulty
+                            ? 'bg-primary-100 text-primary-700'
+                            : 'bg-gray-200 text-gray-600'
+                        }`}
+                      >
+                        {useAutoDifficulty ? '🤖 自动' : '✋ 手动'}
+                      </button>
+                    </div>
+
+                    <div className={`rounded-lg p-3 border-2 mb-2 ${getDifficultyBgClass(effectiveDifficulty)}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-lg font-bold">{effectiveDifficulty}</span>
+                          <span className="text-sm ml-1">{getDifficultyLabel(effectiveDifficulty)}</span>
+                        </div>
+                        <span className="text-lg">{'★'.repeat(Math.min(effectiveDifficulty, 5))}</span>
+                      </div>
+                      {useAutoDifficulty && (
+                        <div className="text-xs mt-1 opacity-75">
+                          综合得分: {autoDifficulty.totalScore}
+                        </div>
+                      )}
+                    </div>
+
+                    {useAutoDifficulty ? (
+                      <div className="space-y-1">
+                        <button
+                          onClick={() => setShowBreakdown(!showBreakdown)}
+                          className="w-full text-xs text-primary-600 hover:text-primary-700 py-1"
+                        >
+                          {showBreakdown ? '▼ 收起详情' : '▶ 查看评估详情'}
+                        </button>
+                        {showBreakdown && (
+                          <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-2 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">地图大小</span>
+                              <span className="font-medium">{autoDifficulty.mapSizeScore}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">墙壁密度</span>
+                              <span className="font-medium">{autoDifficulty.wallDensityScore}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">陷阱密度</span>
+                              <span className="font-medium">{autoDifficulty.pitDensityScore}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">星星数量</span>
+                              <span className="font-medium">{autoDifficulty.starCountScore}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">路径长度</span>
+                              <span className="font-medium">{autoDifficulty.pathLengthScore}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">星星路径</span>
+                              <span className="font-medium">{autoDifficulty.starPathScore}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">指令复杂度</span>
+                              <span className="font-medium">{autoDifficulty.blockComplexityScore}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">路径复杂度</span>
+                              <span className="font-medium">{autoDifficulty.pathComplexityScore}</span>
+                            </div>
+                            <div className="border-t border-gray-100 pt-1 flex justify-between font-bold">
+                              <span>总分</span>
+                              <span>{autoDifficulty.totalScore}</span>
+                            </div>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => {
+                            setDifficulty(autoDifficulty.difficulty);
+                            setUseAutoDifficulty(false);
+                          }}
+                          className="w-full text-xs text-gray-500 hover:text-primary-600 py-1"
+                        >
+                          切换为手动调整 →
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="range"
+                          min={1}
+                          max={8}
+                          value={difficulty}
+                          onChange={(e) => setDifficulty(parseInt(e.target.value))}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-xs text-gray-400 mt-1">
+                          <span>简单</span>
+                          <span>困难</span>
+                        </div>
+                        <button
+                          onClick={() => setUseAutoDifficulty(true)}
+                          className="w-full text-xs text-gray-500 hover:text-primary-600 py-1 mt-1"
+                        >
+                          ← 切换为自动评估
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div>
                     <label className="text-sm text-gray-600 block mb-1">
-                      难度：{difficulty}
+                      最大指令块数 {maxBlocks > 0 ? `(${maxBlocks})` : '(无限)'}
                     </label>
                     <input
-                      type="range"
-                      min={1}
-                      max={8}
-                      value={difficulty}
-                      onChange={(e) => setDifficulty(parseInt(e.target.value))}
-                      className="w-full"
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={maxBlocks}
+                      onChange={(e) => setMaxBlocks(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                      placeholder="0 = 无限制"
                     />
-                    <div className="flex justify-between text-xs text-gray-400 mt-1">
-                      <span>简单</span>
-                      <span>困难</span>
-                    </div>
+                    <p className="text-xs text-gray-400 mt-1">设为 0 表示不限制</p>
                   </div>
                 </div>
               </div>
